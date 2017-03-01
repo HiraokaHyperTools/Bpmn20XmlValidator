@@ -16,21 +16,39 @@ namespace Bpmn20XmlValidator {
                 Environment.ExitCode = 1;
                 return;
             }
-            using (var fs = File.OpenRead(args[0])) {
-                var readerSettings = new XmlReaderSettings();
-                readerSettings.Schemas.Add(XmlSchema.Read(new StringReader(Resources.BPMN20), null));
-                readerSettings.Schemas.Add(XmlSchema.Read(new StringReader(Resources.BPMNDI), null));
-                readerSettings.Schemas.Add(XmlSchema.Read(new StringReader(Resources.DC), null));
-                readerSettings.Schemas.Add(XmlSchema.Read(new StringReader(Resources.DI), null));
-                readerSettings.Schemas.Add(XmlSchema.Read(new StringReader(Resources.Semantic), null));
-                readerSettings.ValidationType = ValidationType.Schema;
-                readerSettings.ValidationEventHandler += (sender, e) => {
-                    var lineInfo = (IXmlLineInfo)sender;
+            String currentXsd = null;
+            var readerSettings = new XmlReaderSettings();
+            readerSettings.ValidationFlags |= XmlSchemaValidationFlags.ReportValidationWarnings;
+            readerSettings.ValidationType = ValidationType.Schema;
+            readerSettings.ValidationEventHandler += (sender, e) => {
+                if (e.Severity == XmlSeverityType.Warning) {
+                    Console.WriteLine("{0}({1},{2}): {3}: {4}"
+                        , currentXsd
+                        , e.Exception.LineNumber, e.Exception.LinePosition, e.Severity, e.Message);
+                }
+                else {
                     Console.Error.WriteLine("{0}({1},{2}): {3}: {4}"
-                        , fs.Name
-                        , lineInfo.LineNumber, lineInfo.LinePosition, e.Severity, e.Message);
+                        , currentXsd
+                        , e.Exception.LineNumber, e.Exception.LinePosition, e.Severity, e.Message);
                     Environment.ExitCode = 1;
-                };
+                }
+            };
+            String schemaDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SCHEMA");
+            if (Directory.Exists(schemaDir)) {
+                foreach (var fpxsd in Directory.GetFiles(schemaDir, "*.xsd", SearchOption.AllDirectories)) {
+                    using (var fsxsd = File.OpenRead(fpxsd)) {
+                        currentXsd = fpxsd;
+                        readerSettings.Schemas.Add(XmlSchema.Read(fsxsd, (sender, e) => {
+                            Console.Error.WriteLine("{0}({1},{2}): {3}: {4}"
+                                , currentXsd
+                                , e.Exception.LineNumber, e.Exception.LinePosition, e.Severity, e.Message);
+                            Environment.ExitCode = 1;
+                        }));
+                    }
+                }
+            }
+            using (var fs = File.OpenRead(args[0])) {
+                currentXsd = fs.Name;
                 using (var reader = XmlReader.Create(fs, readerSettings)) {
                     while (reader.Read()) {
 
